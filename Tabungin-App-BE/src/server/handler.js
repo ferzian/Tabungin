@@ -1,13 +1,10 @@
-import { db } from "../config/firebase.js";
-import { doc, addDoc, collection, getDocs, getDoc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
-import { Saving } from "../models/saving.js";
-import { User } from "../models/user.js";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import { db, auth } from "../config/firebase.js";
+import { doc, addDoc, setDoc, collection, getDocs, getDoc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 
 const usersCollection = collection(db, 'users');
 
-export const addUser = async (req, res) => {
+export const registerUser = async (req, res) => {
     try {
         const { username, email, password } = req.body;
 
@@ -15,41 +12,36 @@ export const addUser = async (req, res) => {
             return res.status(400).send({ error: "Username, email, and password are required." });
         }
 
-        const emailQuery = query(usersCollection, where("email", "==", email));
-        const emailSnapshot = await getDocs(emailQuery);
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const { user: authUser } = userCredential;
 
-        if (!emailSnapshot.empty) {
-            return res.status(400).send({ error: "Email already exists!" });
-        }
+        const userRef = doc(usersCollection, authUser.uid);
+        const userData = {
+            username,
+            email,
+            password,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+        await setDoc(userRef, userData);
 
-        const passwordHash = await bcrypt.hash(password, 10);
-        const user = new User(username, email, passwordHash);
-
-        const userRef = await addDoc(usersCollection, JSON.parse(JSON.stringify(user)));
-
-        const saving = new Saving(userRef.id, 0);
         const savingsCollectionRef = collection(userRef, "savings");
-        await addDoc(savingsCollectionRef, JSON.parse(JSON.stringify(saving)));
-
-        const token = jwt.sign({ userId: userRef.id }, process.env.JWT_SECRET_KEY, {
-            expiresIn: process.env.JWT_EXPIRES_IN,
-        });
+        const savingData = {
+            amount: 0,
+            createdAt: new Date(),
+        };
+        await addDoc(savingsCollectionRef, savingData);
 
         res.status(201).send({
             message: "User registered successfully!",
             data: {
-                user,
-                saving: {
-                    userId: userRef.id,
-                    amount: saving.amount,
-                    createdAt: saving.createdAt,
-                },
-                token,
+                user: userData,
+                saving: savingData,
             },
         });
     } catch (error) {
-        console.error("Error adding user: ", error);
-        res.status(500).send({ error: "Error adding user!" });
+        console.error("Error register user: ", error);
+        res.status(500).send({ error: error.message });
     }
 };
 
@@ -58,42 +50,30 @@ export const loginUser = async (req, res) => {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            return res.status(400).send({ error: "Email dan password harus diisi." });
+            return res.status(400).send({ error: "Email and password are required." });
         }
 
-        const emailQuery = query(usersCollection, where("email", "==", email));
-        const emailSnapshot = await getDocs(emailQuery);
-
-        if (emailSnapshot.empty) {
-            return res.status(404).send({ error: "Email tidak ditemukan." });
-        }
-
-        const userDoc = emailSnapshot.docs[0];
-        const user = userDoc.data();
-
-        const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-
-        if (!passwordMatch) {
-            return res.status(401).send({ error: "Password salah." });
-        }
-
-        const token = jwt.sign({ userId: userDoc.id }, process.env.JWT_SECRET_KEY, {
-            expiresIn: process.env.JWT_EXPIRES_IN,
-        });
+        const result = await signInWithEmailAndPassword(auth, email, password);
 
         res.status(200).send({
-            message: "Login berhasil.",
-            token,
+            message: "Login success.",
+            data: {
+                user: JSON.parse(JSON.stringify(result.user)),
+            }
         });
     } catch (error) {
-        console.error("Error saat login: ", error);
-        res.status(500).send({ error: "Error saat login!" });
+        console.error("Error login user: ", error);
+        res.status(500).send({ error: "Error login user!" });
     }
 };
 
 export const getUser = async (req, res) => {
     try {
         const { userId } = req.params;
+
+        if (!userId) {
+            return res.status(400).send({ error: "User ID is required." });
+        }
 
         const userRef = doc(usersCollection, userId);
         const userSnapshot = await getDoc(userRef);
@@ -105,12 +85,15 @@ export const getUser = async (req, res) => {
         const userData = userSnapshot.data();
 
         res.status(200).send({
-            id: userSnapshot.id,
-            ...userData,
+            message: "User fetched successfully.",
+            data: {
+                id: userSnapshot.id,
+                ...userData,
+            },
         });
     } catch (error) {
         console.error("Error fetching user: ", error);
-        res.status(500).send({ error: 'Error fetching user!' });
+        res.status(500).send({ error: "Error fetching user!" });
     }
 };
 

@@ -2,7 +2,7 @@ import {
     getSavings,
     updateSaving,
     deleteTransaction,
-    addUser,
+    registerUser,
     loginUser,
     getUser,
     deleteUser,
@@ -16,8 +16,8 @@ import { authenticate } from "../middleware/auth.js";
 
 const routes = express.Router();
 
-routes.post("/users", addUser);
-routes.post("/login", loginUser);
+routes.post("/auth/register", registerUser);
+routes.post("/auth/login", loginUser);
 routes.get("/users/:userId", authenticate, getUser);
 routes.delete("/users/:userId", authenticate, deleteUser);
 
