@@ -1,6 +1,7 @@
 import { db, auth } from "../config/firebase.js";
-import { doc, addDoc, setDoc, collection, getDocs, getDoc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
+import { doc, addDoc, setDoc, collection, getDocs, getDoc, updateDoc, deleteDoc} from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import bcrypt from "bcrypt";
 
 const usersCollection = collection(db, 'users');
 
@@ -12,6 +13,9 @@ export const registerUser = async (req, res) => {
             return res.status(400).send({ error: "Username, email, and password are required." });
         }
 
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const { user: authUser } = userCredential;
 
@@ -19,7 +23,7 @@ export const registerUser = async (req, res) => {
         const userData = {
             username,
             email,
-            password,
+            passwordHash: hashedPassword,
             createdAt: new Date(),
             updatedAt: new Date(),
         };
@@ -177,13 +181,16 @@ export const getSavings = async (req, res) => {
 
         const savingData = savingDoc.data();
 
-        res.json({
-            id: savingDoc.id,
-            userId,
-            amount: savingData.amount,
-            additions: additions,
-            reductions: reductions,
-        });
+        res.status(200).send({
+            message: "Savings fetched successfully.",
+            data: {
+                id: savingDoc.id,
+                userId,
+                amount: savingData.amount,
+                additions: additions,
+                reductions: reductions,
+            }
+        })
     } catch (e) {
         console.error("Error getting savings: ", e);
         res.status(500).send({ error: "Error fetching savings!" });
@@ -238,7 +245,7 @@ export const updateSaving = async (req, res) => {
         const { userId } = req.params;
         const { amount, description, actionType } = req.body;
 
-        if (!userId || typeof amount !== "number" || amount <= 0 || !description || !actionType) {
+        if ( typeof amount !== "number" || amount <= 0 || !description || !actionType) {
             return res.status(400).send({ error: 'Amount, description, and actionType are required.' });
         }
 
